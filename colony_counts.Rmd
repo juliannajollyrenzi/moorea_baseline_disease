@@ -172,7 +172,7 @@ total_abund %>%
   xlab("Distance to crest") +
   ylab("Total coral abundance")
 
-ggsave(here("figures/TotalAbundDistCrest.jpg"), width = 4.5, height = 3, dpi = 500)
+ggsave(here("figures/TotalAbundDistCrest.jpg"), width = 7, height = 4.6, dpi = 500)
 
 
 total_abund %>% 
@@ -210,7 +210,7 @@ total_abund %>%
   #facet_wrap(~KellyDeron_habitat) +
   theme_classic()
 
-ggsave(here("figures/ShannonTotalAbundance.jpg"), width = 4.5, height = 3, dpi = 500)
+ggsave(here("figures/ShannonTotalAbundance.jpg"), width = 7, height = 4.6, dpi = 500)
 
 
 total_abund %>% 
@@ -452,7 +452,7 @@ pred %>%
   theme_classic()
 
 
-ggsave(here("figures/PredTrapeziidabund.jpg"), width = 4.5, height = 3, dpi = 500)
+#ggsave(here("figures/PredTrapeziidabund.jpg"), width = 7, height = 4.6, dpi = 500)
 ```
 
 
