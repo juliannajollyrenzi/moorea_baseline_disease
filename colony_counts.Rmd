@@ -81,6 +81,8 @@ colonies_cleaned %>%
   ungroup() %>% 
   # replace this with the nearest station
   mutate(Site = ifelse(Site == "Gump", 159, Site)) %>% 
+  # also for T2 site 124 was written as 142. Fix here
+  #mutate(Site = ifelse(Site == 142, 124, Site)) %>% 
   mutate(Site = as.double(Site)) %>% 
   # join visual nutrient data
   full_join(nuts, by = "Site") -> genusAbund_temp
@@ -128,7 +130,7 @@ Get all ID df
 
 ```{r}
 genusAbund_Long %>% 
-  group_by(TransectSite, Date, Transect, Site) %>% 
+  group_by(TransectSite, Date, Transect, Site, Latitude, Longitude, Distance_to_crest, Distance_to_shore, Distance_to_pass, Distance_to_deep_lagoon_water, Distance_to_population_center, Habitat, Microbial_Species_Richness, Microbial_Shannon_Diversity, Microbial_Phylogenetic_Diversity, Microbial_Evenness, Microbial_PCoA1, Microbial_PCoA2, FishNH4ug_min_m2, FishBiomg_m2) %>% 
   summarize(N = n()) %>% 
   select(-N) -> all_ids
 ```
@@ -166,8 +168,10 @@ montipAbund %>%
   theme_classic()
 ```
 
+#### Bad lil model
+
 ```{r}
-m.Montip <- glmer(Abundance ~ Nutrient_estimate + scale(FishBiomg_m2) + (1 | Site), data = montipAbund, family = poisson(link = "log"))
+m.Montip <- glmer(Abundance ~ Nutrient_estimate + scale(FishBiomg_m2) +  (1 | Site), data = montipAbund, family = poisson(link = "log"))
   summary(m.Montip)
   plot(m.Montip)
 ```
@@ -197,10 +201,10 @@ montipSize %>%
   #group_by(Size_cm, Nutrient_estimate) %>% 
   #summarize(Mean_abund = mean(Abundance),
   #          sd_abund = sd(Abundance)) %>% 
-  ggplot(aes(x = Size_cm, y = Abundance)) + 
+  ggplot(aes(x = Nutrient_estimate, y = Abundance, group = Nutrient_estimate)) + 
   geom_boxplot() +
   geom_point(aes(color = as.factor(Site))) +
-  facet_wrap(~as.factor(Nutrient_estimate)) +
+  facet_wrap(~as.factor(Size_cm)) +
   theme_bw()
 ```
 
@@ -302,6 +306,7 @@ WRONG %>%
 mPocMonti <- glm(Poc_abund ~ Montip_abundance + Nutrient_estimate + Montip_abundance:Nutrient_estimate, family = poisson, data = WRONG)
   summary(mPocMonti)
   plot(mPocMonti)
+  
 ```
 
 Hmmm... What do the predictions say?
@@ -330,7 +335,7 @@ pred %>%
   theme_classic()
 
 
-  # ggsave(here("figures/PredTrapeziidabund.jpg"), width = 4.5, height = 3, dpi = 500)
+ggsave(here("figures/PredTrapeziidabund.jpg"), width = 4.5, height = 3, dpi = 500)
 ```
 
 
@@ -425,7 +430,7 @@ div.metrics %>%
   #filter(Site != 159) %>% 
   ggplot(aes(x = Nutrient_estimate, y = spp.rich, color = as.factor(Site))) +
   geom_boxplot() +
-  geom_point() +
+  geom_jitter() +
   ylab("Coral species richness") +
   xlab("Visual Nutrient Estimate") +
   theme_classic()
@@ -502,7 +507,7 @@ div.metrics %>%
 # Distance_to_pass
 div.metrics %>% 
   filter(Site != 159) %>% 
-  ggplot(aes(x = Distance_to_crest, y = spp.rich, color = as.factor(Site))) +
+  ggplot(aes(x = Distance_to_pass, y = spp.rich, color = as.factor(Site))) +
   geom_boxplot() +
   geom_point() +
   ylab("Species richness") +
@@ -521,6 +526,8 @@ div.metrics %>%
   theme_classic() # interesting maybe?
 
 ggsave(here("figures/SppRichDistPop.jpg"), width = 7, height = 4.6, dpi = 500)
+
+
 
 
 
@@ -569,8 +576,11 @@ div.metrics %>%
   ggplot(aes(x = Microbial_Evenness, y = spp.rich, color = as.factor(Site))) +
   geom_boxplot() +
   geom_point() +
-  ylab("Species richness") +
+  ylab("Coral species richness") +
+  xlab("Microbial evenness") +
   theme_classic() # cool
+  
+ggsave(here("figures/SppRichMicrobeEven.jpg"), width = 7, height = 4.6, dpi = 500)
 
 
 # Microbial_PCoA1
@@ -654,7 +664,6 @@ pred %>%
 
 For habitat:
 
-Hmmm... What do the predictions say?
 
 ```{r}
 pred <- expand.grid(Distance_to_population_center = seq(from = min(div.metrics$Distance_to_population_center, na.rm = TRUE),
