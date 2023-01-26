@@ -3,8 +3,694 @@ title: "Colony counts"
 author: "Julianna Renzi"
 date: "1/25/2023"
 output: html_document
+editor_options: 
+  chunk_output_type: console
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+
+
+require(here)
+require(tidyverse)
+require(vegan)
+require(lme4)
 ```
+
+# Read in data
+
+```{r}
+# colony counts
+colonies <- read_csv(here("data/Colony_counts.csv")) %>% 
+  # fix this weird date entry
+  mutate(Date = case_when(
+    Date == "8/21/22" ~ "8/21/2022",
+    TRUE ~ Date
+  ))
+
+# bring in site visual nutrient file
+nuts <- read_csv(here("data/site_metadata.csv")) 
+  
+# and nutrient working group file that we will use as metadata
+nutMetadat <- read_csv(here("data/All_dat_withFish.csv")) 
+# Make overall site stats
+```
+
+What are the misspelt coral genera?
+
+```{r}
+colonies %>% 
+  select(Genus) %>% 
+  unique() 
+
+# fix them
+colonies %>% 
+  mutate(Genus = case_when(
+    Genus == "Cyphestrea" ~ "Cyphastrea",
+    Genus == "Fungiid" ~ "Fungiidae",
+    Genus == "leptastrea" ~ "Leptastrea",
+      Genus == "Leptastrea?" ~ "Leptastrea",
+      Genus == "Napropora" ~ "Napopora",
+      Genus == "Napropora" ~ "Napopora",
+    Genus == "Napapora"~ "Napopora",
+      Genus == "Pammacora" ~ "Psammocora",
+      Genus == "Psammacora" ~ "Psammocora", 
+      Genus == "Porites rus" ~ "Porites_rus",
+      Genus == "Porites_Rus" ~ "Porites_rus",
+      Genus == "Porites_Massive" ~ "Porites_massive",
+    TRUE ~ Genus
+  )) %>% 
+  filter(Genus != "Single_polyp") -> colonies_cleaned
+
+
+# check
+colonies_cleaned %>% 
+  select(Genus) %>% 
+  unique() 
+```
+
+
+# Make long df
+
+```{r}
+colonies_cleaned %>% 
+  mutate(Transect = parse_number(Transect)) %>% 
+  mutate(TransectSite = paste0(Site, "T", Transect)) %>% 
+  group_by(Transect, TransectSite, Date, Site, Genus) %>% 
+  summarize(Abundance = sum(Count)) %>% 
+  ungroup() %>% 
+  # replace this with the nearest station
+  mutate(Site = ifelse(Site == "Gump", 159, Site)) %>% 
+  mutate(Site = as.double(Site)) %>% 
+  # join visual nutrient data
+  full_join(nuts, by = "Site") -> genusAbund_temp
+
+```
+
+Then want to join it with key parts of the nutrient working group metadata:
+
+```{r}
+# select the stuff we want:
+nutMetadat %>% 
+  filter(TimePeriod == "2021-May") %>% 
+  mutate(Site = as.double(Site)) %>% 
+  select(Site, Latitude, Longitude, Distance_to_crest, Distance_to_shore, Distance_to_pass, Distance_to_deep_lagoon_water, Distance_to_population_center, Habitat, Microbial_Species_Richness, Microbial_Shannon_Diversity, Microbial_Phylogenetic_Diversity, Microbial_Evenness, Microbial_PCoA1, Microbial_PCoA2, FishNH4ug_min_m2, FishBiomg_m2) -> nmwgMetadat
+
+# also do a separate one for 124 since it doesn't have a May 2021 line in the df:
+nutMetadat %>% 
+  filter(Site == 124) %>% 
+  filter(TimePeriod == "2020-August") %>% 
+  mutate(Site = as.double(Site)) %>% 
+  select(Site, Latitude, Longitude, Distance_to_crest, Distance_to_shore, Distance_to_pass, Distance_to_deep_lagoon_water, Distance_to_population_center, Habitat, Microbial_Species_Richness, Microbial_Shannon_Diversity, Microbial_Phylogenetic_Diversity, Microbial_Evenness, Microbial_PCoA1, Microbial_PCoA2, FishNH4ug_min_m2, FishBiomg_m2) -> nmwgMetadat124
+```
+
+Join with long df:
+
+```{r}
+genusAbund_temp %>% 
+  filter(Site != 124) %>% 
+  left_join(nmwgMetadat) -> genusAbund_tempNo124
+  
+genusAbund_temp %>% 
+  filter(Site == "124") %>% 
+  left_join(nmwgMetadat124, by = "Site") -> genusAbund_temp124
+  
+  
+# put them together
+genusAbund_tempNo124 %>% 
+  filter(Site != 163) %>% 
+  bind_rows(genusAbund_temp124) -> genusAbund_Long
+```
+
+# Look at individual general and total abundance
+
+Get all ID df
+
+```{r}
+genusAbund_Long %>% 
+  group_by(TransectSite, Date, Transect, Site) %>% 
+  summarize(N = n()) %>% 
+  select(-N) -> all_ids
+```
+
+
+## Montipora
+
+Make Montipora df
+
+```{r}
+genusAbund_Long %>% 
+  filter(Genus == "Montipora") %>% 
+  full_join(all_ids) %>% 
+  mutate(Abundance = replace_na(Abundance, 0)) -> montipAbund
+
+```
+
+
+Plot
+
+```{r}
+montipAbund %>% 
+  ggplot(aes(x = Nutrient_estimate, y = Abundance, color = as.factor(Site))) +
+  geom_boxplot() +
+  geom_point() +
+  theme_classic()
+```
+
+
+```{r}
+montipAbund %>% 
+  ggplot(aes(x = FishBiomg_m2, y = Abundance, color = as.factor(Site))) +
+  geom_boxplot() +
+  geom_point() +
+  theme_classic()
+```
+
+```{r}
+m.Montip <- glmer(Abundance ~ Nutrient_estimate + scale(FishBiomg_m2) + (1 | Site), data = montipAbund, family = poisson(link = "log"))
+  summary(m.Montip)
+  plot(m.Montip)
+```
+
+### Size
+
+```{r}
+colonies_cleaned %>% 
+  mutate(Transect = parse_number(Transect)) %>% 
+  mutate(TransectSite = paste0(Site, "T", Transect)) %>% 
+  group_by(Transect, TransectSite, Date, Site, Genus, Size_cm) %>% 
+  summarize(Abundance = sum(Count)) %>% 
+  ungroup() %>% 
+  # replace this with the nearest station
+  mutate(Site = ifelse(Site == "Gump", 159, Site)) %>% 
+  mutate(Site = as.double(Site)) %>% 
+  # join visual nutrient data
+  full_join(nuts, by = "Site") %>% 
+  filter(Genus == "Montipora") %>% 
+  full_join(all_ids) %>% 
+  mutate(Abundance = replace_na(Abundance, 0)) %>% 
+  mutate(Size_cm = factor(Size_cm, levels = c("<5", "5-10", "10-20", "20-40", "40-80", "80-160", ">160"))) -> montipSize
+```
+
+```{r}
+montipSize %>% 
+  #group_by(Size_cm, Nutrient_estimate) %>% 
+  #summarize(Mean_abund = mean(Abundance),
+  #          sd_abund = sd(Abundance)) %>% 
+  ggplot(aes(x = Size_cm, y = Abundance)) + 
+  geom_boxplot() +
+  geom_point(aes(color = as.factor(Site))) +
+  facet_wrap(~as.factor(Nutrient_estimate)) +
+  theme_bw()
+```
+
+
+## Pocillopora
+
+Make Pocillopora df
+
+```{r}
+genusAbund_Long %>% 
+  filter(Genus == "Pocillopora") %>% 
+  full_join(all_ids) %>% 
+  mutate(Abundance = replace_na(Abundance, 0)) %>% 
+  rename(Poc_abund = Abundance )-> pocAbund
+
+```
+
+
+Plot
+
+```{r}
+pocAbund %>% 
+  ggplot(aes(x = Nutrient_estimate, y = Poc_abund, color = as.factor(Site))) +
+  geom_boxplot() +
+  geom_point() +
+  theme_classic()
+```
+
+
+```{r}
+pocAbund %>% 
+  ggplot(aes(x = FishBiomg_m2, y = Poc_abund, color = as.factor(Site))) +
+  geom_boxplot() +
+  geom_point() +
+  theme_classic() # Huh... Wonder if that's real? 
+```
+
+```{r}
+m.Poc <- glmer(Poc_abund ~ Nutrient_estimate + scale(FishBiomg_m2) + (1 | Site), data = pocAbund, family = poisson(link = "log"))
+  summary(m.Poc)
+  plot(m.Poc)
+```
+
+### Size
+
+```{r}
+colonies_cleaned %>% 
+  mutate(Transect = parse_number(Transect)) %>% 
+  mutate(TransectSite = paste0(Site, "T", Transect)) %>% 
+  group_by(Transect, TransectSite, Date, Site, Genus, Size_cm) %>% 
+  summarize(Abundance = sum(Count)) %>% 
+  ungroup() %>% 
+  # replace this with the nearest station
+  mutate(Site = ifelse(Site == "Gump", 159, Site)) %>% 
+  mutate(Site = as.double(Site)) %>% 
+  # join visual nutrient data
+  full_join(nuts, by = "Site") %>% 
+  filter(Genus == "Pocillopora") %>% 
+  full_join(all_ids) %>% 
+  mutate(Abundance = replace_na(Abundance, 0)) %>% 
+  mutate(Size_cm = factor(Size_cm, levels = c("<5", "5-10", "10-20", "20-40", "40-80", "80-160", ">160"))) -> pocSize
+```
+
+```{r}
+pocSize %>% 
+  #group_by(Size_cm, Nutrient_estimate) %>% 
+  #summarize(Mean_abund = mean(Abundance),
+  #          sd_abund = sd(Abundance)) %>% 
+  ggplot(aes(x = Size_cm, y = Abundance)) + 
+  geom_boxplot() +
+  geom_point(aes(color = as.factor(Site))) +
+  facet_wrap(~as.factor(Nutrient_estimate)) +
+  theme_bw()
+```
+
+
+### Poc v. Montip?
+
+```{r}
+montipAbund %>% 
+  rename(Montip_abundance = Abundance) %>% 
+  select(-Genus) %>% 
+  full_join(pocAbund) -> WRONG
+```
+
+AHH THIS IS FUCKED UP I GOTTA FIX THIS. Doing this next bit because I want closure before I move on
+
+```{r}
+WRONG %>% 
+  ggplot(aes(x = Montip_abundance, y = Poc_abund, color = (Nutrient_estimate))) +
+  geom_point() +
+  # 1:1 line
+  geom_abline(slope = 1, intercept = 0) +
+  scale_colour_gradient(low = "gray", high = "red") +
+  theme_classic()
+```
+
+```{r}
+mPocMonti <- glm(Poc_abund ~ Montip_abundance + Nutrient_estimate + Montip_abundance:Nutrient_estimate, family = poisson, data = WRONG)
+  summary(mPocMonti)
+  plot(mPocMonti)
+```
+
+Hmmm... What do the predictions say?
+
+```{r}
+pred <- expand.grid(Montip_abundance = seq(from = min(WRONG$Montip_abundance, na.rm = TRUE),
+                         to = max(WRONG$Montip_abundance, na.rm = TRUE),
+                         length.out = length(WRONG$Montip_abundance)),
+                    Nutrient_estimate = c(min(WRONG$Nutrient_estimate, na.rm = TRUE),
+                                          mean(WRONG$Nutrient_estimate, na.rm = TRUE),
+                         max(WRONG$Nutrient_estimate, na.rm = TRUE)))
+
+
+
+pred$PredPocAbund <- predict(mPocMonti, 
+                 pred, 
+                 type = "response")
+
+
+# plot
+pred %>% 
+  ggplot(aes(x = Montip_abundance, y = PredPocAbund, color = Nutrient_estimate)) +
+  #ylab("Predicted Pocillopora abundance") +
+  scale_colour_gradient(low = "gray", high = "red") +
+  geom_point() +
+  theme_classic()
+
+
+  # ggsave(here("figures/PredTrapeziidabund.jpg"), width = 4.5, height = 3, dpi = 500)
+```
+
+
+What about little Pocillopora recruits vs. Montipora cover??????
+Also is this done right? Do we need zeros for each size class??????
+
+
+
+## Get spp matrix
+
+```{r}
+genusAbund_Long %>% 
+  pivot_wider(names_from = Genus, values_from = Abundance) %>% 
+  # replace NA's with zeros
+  mutate_all(~replace(., is.na(.), 0)) -> spp_matrix_wide # for no coral_ID remove beginning columns
+```
+
+
+Deal with rare genera
+
+```{r}
+spp_mat_rare <- spp_matrix_wide[, colSums(spp_matrix_wide != 0) >= round(dim(spp_matrix_wide)[1]*0.05)] # at least 5% of samples
+```
+
+# Look at diversity metrics
+
+
+```{r}
+# get index for where coral columns start
+first_coral <- grep("Acropora", colnames(spp_mat_rare))
+
+shann.in <- diversity(spp_mat_rare[,first_coral:dim(spp_mat_rare)[2]], index = "shannon")
+simp.in <- diversity(spp_mat_rare[,first_coral:dim(spp_mat_rare)[2]], index = "simpson")
+invSimp.in <- diversity(spp_mat_rare[,first_coral:dim(spp_mat_rare)[2]], index = "invsimpson")
+spp.rich <- specnumber(spp_mat_rare[,first_coral:dim(spp_mat_rare)[2]])
+
+
+
+div.metrics <- cbind(shann.in, simp.in, invSimp.in, spp.rich, spp_mat_rare[,1:(first_coral-1)]) 
+  
+
+```
+
+## By habitat
+
+```{r}
+# shannon
+div.metrics %>% 
+  ggplot(aes(x = as.factor(Site), y = shann.in, fill = KellyDeron_habitat)) +
+  geom_boxplot() +
+  ylab("Shannon diversity") +
+  theme_classic()
+
+# spp richness
+div.metrics %>% 
+  ggplot(aes(x = as.factor(Site), y = spp.rich, fill = KellyDeron_habitat)) +
+  geom_boxplot() +
+  ylab("Species richness") +
+  theme_classic()
+
+
+# simpson
+div.metrics %>% 
+  ggplot(aes(x = as.factor(Site), y = simp.in, fill = KellyDeron_habitat)) +
+  geom_boxplot() +
+  ylab("Simpson's index") +
+  theme_classic()
+
+# inverse simpson
+div.metrics %>% 
+  ggplot(aes(x = as.factor(Site), y = invSimp.in, fill = KellyDeron_habitat)) +
+  geom_boxplot() +
+  theme_classic()
+
+```
+
+
+## By nutrient regime
+
+```{r}
+# shannon
+div.metrics %>% 
+ #filter(Site != 159) %>% 
+  ggplot(aes(x = Nutrient_estimate, y = shann.in, color = as.factor(Site))) +
+  geom_boxplot() +
+  geom_point() +
+  ylab("Shannon diversity") +
+  theme_classic() # Gump is just crazy..
+
+# spp richness
+div.metrics %>% 
+  #filter(Site != 159) %>% 
+  ggplot(aes(x = Nutrient_estimate, y = spp.rich, color = as.factor(Site))) +
+  geom_boxplot() +
+  geom_point() +
+  ylab("Coral species richness") +
+  xlab("Visual Nutrient Estimate") +
+  theme_classic()
+
+ggsave(here("figures/SppRichNut.jpg"), width = 7, height = 4.6, dpi = 500)
+
+
+# simpson
+div.metrics %>% 
+  #filter(Site != 159) %>% 
+  ggplot(aes(x = Nutrient_estimate, y = simp.in, color = as.factor(Site))) +
+  geom_boxplot() +
+  geom_point() +
+  ylab("Simpson's index") +
+  theme_classic()
+
+
+# inverse simpson
+div.metrics %>% 
+  #filter(Site != 159) %>% 
+  ggplot(aes(x = Nutrient_estimate, y = invSimp.in, color = as.factor(Site))) +
+  geom_boxplot() +
+  geom_point() +
+  theme_classic()
+
+```
+
+## Weird model?
+
+```{r}
+m.sppRich <- glm(spp.rich ~ Nutrient_estimate, family = poisson, data = div.metrics)
+  summary(m.sppRich)
+  plot(m.sppRich)
+  
+# What about without Gump?
+m.sppRichnoGump <- glm(spp.rich ~ Nutrient_estimate, family = poisson, data = subset(div.metrics, Site != 159))
+  summary(m.sppRichnoGump) # nope
+  plot(m.sppRichnoGump)  
+
+```
+
+
+## By distance to different things
+
+```{r}
+# distance to shore
+div.metrics %>% 
+  filter(Site != 159) %>% 
+  ggplot(aes(x = Distance_to_shore, y = spp.rich, color = as.factor(Site))) +
+  geom_boxplot() +
+  geom_point() +
+  ylab("Species richness") +
+  theme_classic()
+
+# distance to crest--kinda interesting
+div.metrics %>% 
+  filter(Site != 159) %>% 
+  ggplot(aes(x = Distance_to_crest, y = spp.rich, color = as.factor(Site))) +
+  geom_boxplot() +
+  geom_point() +
+  ylab("Species richness") +
+  theme_classic()
+
+
+div.metrics %>% 
+  filter(Site != 159) %>% 
+  ggplot(aes(x = Distance_to_crest, y = spp.rich, color = as.factor(Site))) +
+  geom_boxplot() +
+  geom_point() +
+  ylab("Species richness") +
+  theme_classic()
+
+
+# Distance_to_pass
+div.metrics %>% 
+  filter(Site != 159) %>% 
+  ggplot(aes(x = Distance_to_crest, y = spp.rich, color = as.factor(Site))) +
+  geom_boxplot() +
+  geom_point() +
+  ylab("Species richness") +
+  theme_classic()
+
+
+# Distance_to_population_center
+div.metrics %>% 
+  filter(Site != 159) %>% 
+  ggplot(aes(x = Distance_to_population_center, y = spp.rich, group = as.factor(Site), fill = Nutrient_estimate)) +
+  geom_boxplot() +
+  geom_point() +
+  ylab("Coral pecies richness") +
+  xlab("Distance to population center") +
+  scale_fill_gradient(low = "gray", high = "red") +
+  theme_classic() # interesting maybe?
+
+ggsave(here("figures/SppRichDistPop.jpg"), width = 7, height = 4.6, dpi = 500)
+
+
+
+# Microbial_Species_Richness
+div.metrics %>% 
+  #filter(Site != 159 ) %>% 
+  filter(Site != 124) %>% 
+  ggplot(aes(x = Microbial_Species_Richness, y = spp.rich, color = as.factor(Site))) +
+  geom_boxplot() +
+  geom_point() +
+  ylab("Coral species richness") +
+  xlab("Microbe species richness") +
+  theme_classic() # potentially cool!
+
+ggsave(here("figures/SppRichMicrobe.jpg"), width = 7, height = 4.6, dpi = 500)
+
+
+# Microbial_Shannon_Diversity
+div.metrics %>% 
+  #filter(Site != 159 ) %>% 
+  filter(Site != 124) %>% 
+  ggplot(aes(x = Microbial_Shannon_Diversity, y = spp.rich, color = as.factor(Site))) +
+  geom_boxplot() +
+  geom_point() +
+  ylab("Coral species richness") +
+  xlab("Microbe shannon diversity")+
+  theme_classic() # potentially cool?
+
+ggsave(here("figures/SppRichMicrobeShann.jpg"), width = 7, height = 4.6, dpi = 500)
+
+
+# Microbial_Phylogenetic_Diversity
+div.metrics %>% 
+  filter(Site != 159) %>% 
+  filter(Site != 124) %>% 
+  ggplot(aes(x = Microbial_Phylogenetic_Diversity, y = spp.rich, color = as.factor(Site))) +
+  geom_boxplot() +
+  geom_point() +
+  ylab("Species richness") +
+  theme_classic()
+
+# Microbial_Evenness
+div.metrics %>% 
+  filter(Site != 159) %>% 
+  filter(Site != 124) %>% 
+  ggplot(aes(x = Microbial_Evenness, y = spp.rich, color = as.factor(Site))) +
+  geom_boxplot() +
+  geom_point() +
+  ylab("Species richness") +
+  theme_classic() # cool
+
+
+# Microbial_PCoA1
+div.metrics %>% 
+  #filter(Site != 159) %>% 
+  filter(Site != 124) %>% 
+  ggplot(aes(x = Microbial_PCoA1, y = spp.rich, color = as.factor(Site))) +
+  geom_boxplot() +
+  geom_point() +
+  ylab("Species richness") +
+  theme_classic() 
+
+
+
+# FishBiomg_m2
+div.metrics %>% 
+  filter(Site != 159) %>% 
+  filter(Site != 124) %>% 
+  ggplot(aes(x = FishBiomg_m2, y = spp.rich, color = as.factor(Site))) +
+  geom_boxplot() +
+  geom_point() +
+  ylab("Species richness") +
+  theme_classic() 
+
+
+```
+
+
+## Other weird model?
+
+```{r}
+m.sppRichDist <- glmer(spp.rich ~ Nutrient_estimate + scale(Distance_to_population_center) + Nutrient_estimate:scale(Distance_to_population_center) + (1 | Site), data = div.metrics, family = poisson(link = "log"))  
+  summary(m.sppRichDist)
+  
+  
+# microbes?
+m.sppRichMicrobe <- glmer(spp.rich ~ scale(Microbial_Species_Richness) + (1 | Site), data =div.metrics, family = poisson(link = "log"))  
+  summary(m.sppRichMicrobe)
+  
+
+m.sppRichDistHab <- glmer(spp.rich ~ Nutrient_estimate + KellyDeron_habitat + Nutrient_estimate:KellyDeron_habitat + (1 | Site), data = div.metrics, family = poisson(link = "log"))  
+  summary(m.sppRichDistHab)
+    
+  
+```
+
+Hmmm... What do the predictions say?
+
+```{r}
+pred <- expand.grid(Distance_to_population_center = seq(from = min(div.metrics$Distance_to_population_center, na.rm = TRUE),
+                         to = max(div.metrics$Distance_to_population_center, na.rm = TRUE),
+                         length.out = length(div.metrics$Distance_to_population_center)),
+                    Nutrient_estimate = c(min(div.metrics$Nutrient_estimate, na.rm = TRUE),
+                                          mean(div.metrics$Nutrient_estimate, na.rm = TRUE),
+                         max(div.metrics$Nutrient_estimate, na.rm = TRUE)),
+                    Site = unique(div.metrics$Site))
+
+
+
+pred$PredSppRich <- predict(m.sppRichDist, 
+                 pred, 
+                 type = "response")
+
+
+# plot
+pred %>% 
+  ggplot(aes(x = Distance_to_population_center, y = PredSppRich, color = Nutrient_estimate)) +
+  geom_point() +
+  ylab("Predicted coral species richness") +
+  xlab("Distance to population center") +
+  scale_color_gradient(low = "gray", high = "red") +
+  facet_wrap(~Nutrient_estimate) +
+  theme_classic() # interesting maybe?
+  
+
+
+
+# ggsave(here("figures/PredTrapeziidabund.jpg"), width = 4.5, height = 3, dpi = 500)
+```
+
+
+For habitat:
+
+Hmmm... What do the predictions say?
+
+```{r}
+pred <- expand.grid(Distance_to_population_center = seq(from = min(div.metrics$Distance_to_population_center, na.rm = TRUE),
+                         to = max(div.metrics$Distance_to_population_center, na.rm = TRUE),
+                         length.out = length(div.metrics$Distance_to_population_center)),
+                    Nutrient_estimate = c(min(div.metrics$Nutrient_estimate, na.rm = TRUE),
+                                          mean(div.metrics$Nutrient_estimate, na.rm = TRUE),
+                         max(div.metrics$Nutrient_estimate, na.rm = TRUE)),
+                    Site = unique(div.metrics$Site),
+                    KellyDeron_habitat = unique(div.metrics$KellyDeron_habitat))
+
+
+
+pred$PredSppRich <- predict(m.sppRichDistHab, 
+                 pred, 
+                 type = "response")
+
+
+# plot
+pred %>% 
+  mutate(KellyDeron_habitat = factor(KellyDeron_habitat, levels = c("Fringing_reef", "Mid_lagoon", "Reef_pass"))) %>% 
+  ggplot(aes(x = Nutrient_estimate, y = PredSppRich, color = Nutrient_estimate)) +
+  geom_point() +
+  geom_line() +
+  ylab("Predicted coral species richness") +
+  xlab("Visual nutrient estimate") +
+  scale_color_gradient(low = "gray", high = "red") +
+  facet_wrap(~KellyDeron_habitat) +
+  theme_classic() # interesting maybe?
+  
+
+
+
+# ggsave(here("figures/PredTrapeziidabund.jpg"), width = 4.5, height = 3, dpi = 500)
+```
+
+
+
+
