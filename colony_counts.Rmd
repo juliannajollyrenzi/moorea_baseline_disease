@@ -136,6 +136,123 @@ genusAbund_Long %>%
 ```
 
 
+## Total abundance
+
+```{r}
+genusAbund_Long %>% 
+  group_by(TransectSite, Date, Transect, Site, Nutrient_estimate, KellyDeron_habitat, Latitude, Longitude, Distance_to_crest, Distance_to_shore, Distance_to_pass, Distance_to_deep_lagoon_water, Distance_to_population_center, Habitat, Microbial_Species_Richness, Microbial_Shannon_Diversity, Microbial_Phylogenetic_Diversity, Microbial_Evenness, Microbial_PCoA1, Microbial_PCoA2, FishNH4ug_min_m2, FishBiomg_m2) %>% 
+  summarize(Total_coral_abundance = sum(Abundance)) -> total_abund
+```
+
+Plot
+
+```{r}
+total_abund %>% 
+  ggplot(aes(x = Nutrient_estimate, y = Total_coral_abundance, color = as.factor(Site))) +
+  geom_boxplot() +
+  geom_point() +
+  facet_wrap(~KellyDeron_habitat) +
+  theme_classic()
+
+
+total_abund %>% 
+  ggplot(aes(x = Distance_to_shore, y = Total_coral_abundance, color = as.factor(Site))) +
+  geom_boxplot() +
+  geom_point() +
+  #facet_wrap(~KellyDeron_habitat) +
+  theme_classic()
+
+
+total_abund %>% 
+  ggplot(aes(x = Distance_to_crest, y = Total_coral_abundance, color = as.factor(Site))) +
+  geom_boxplot() +
+  geom_point() +
+  #facet_wrap(~KellyDeron_habitat) +
+  theme_classic() +
+  xlab("Distance to crest") +
+  ylab("Total coral abundance")
+
+ggsave(here("figures/TotalAbundDistCrest.jpg"), width = 4.5, height = 3, dpi = 500)
+
+
+total_abund %>% 
+  ggplot(aes(x = Distance_to_pass, y = Total_coral_abundance, color = as.factor(Site))) +
+  geom_boxplot() +
+  geom_point() +
+  #facet_wrap(~KellyDeron_habitat) +
+  theme_classic()
+
+
+total_abund %>% 
+  ggplot(aes(x = Distance_to_population_center, y = Total_coral_abundance, color = as.factor(Site))) +
+  geom_boxplot() +
+  geom_point() +
+  facet_wrap(~KellyDeron_habitat) +
+  theme_classic()
+
+
+total_abund %>% 
+  ggplot(aes(x = Microbial_Species_Richness, y = Total_coral_abundance, color = as.factor(Site))) +
+  geom_boxplot() +
+  geom_point() +
+  #facet_wrap(~KellyDeron_habitat) +
+  theme_classic()
+
+
+
+total_abund %>% 
+  ggplot(aes(x = Microbial_Shannon_Diversity, y = Total_coral_abundance, group = as.factor(Site), color = Nutrient_estimate)) +
+  geom_boxplot() +
+  geom_point() +
+  scale_colour_gradient(low = "gray", high = "red") +
+  ylab("Total coral abundance") +
+  xlab("Microbial shannon diversity") +
+  #facet_wrap(~KellyDeron_habitat) +
+  theme_classic()
+
+ggsave(here("figures/ShannonTotalAbundance.jpg"), width = 4.5, height = 3, dpi = 500)
+
+
+total_abund %>% 
+  ggplot(aes(x = Microbial_Phylogenetic_Diversity, y = Total_coral_abundance, group = as.factor(Site), color = Nutrient_estimate)) +
+  geom_boxplot() +
+  scale_colour_gradient(low = "gray", high = "red") +
+  geom_point() +
+  #facet_wrap(~KellyDeron_habitat) +
+  theme_classic()
+
+
+total_abund %>% 
+  ggplot(aes(x = Microbial_Evenness, y = Total_coral_abundance, group = as.factor(Site), color = Nutrient_estimate)) +
+  geom_boxplot() +
+  scale_colour_gradient(low = "gray", high = "red") +
+  geom_point() +
+  #facet_wrap(~KellyDeron_habitat) +
+  theme_classic()
+
+
+total_abund %>% 
+  ggplot(aes(x = Microbial_PCoA1, y = Total_coral_abundance, group = as.factor(Site), color = Nutrient_estimate)) +
+  geom_boxplot() +
+  scale_colour_gradient(low = "gray", high = "red") +
+  geom_point() +
+  #facet_wrap(~KellyDeron_habitat) +
+  theme_classic()
+
+
+
+total_abund %>% 
+  ggplot(aes(x = FishBiomg_m2, y = Total_coral_abundance, group = as.factor(Site), color = Nutrient_estimate)) +
+  geom_boxplot() +
+  scale_colour_gradient(low = "gray", high = "red") +
+  geom_point() +
+  #facet_wrap(~KellyDeron_habitat) +
+  theme_classic()
+
+```
+
+
+
 ## Montipora
 
 Make Montipora df
